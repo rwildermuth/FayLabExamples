@@ -38,6 +38,43 @@ predict.bio <- function(start.bio=100,catch=rep(0,10),r=0.2,k=200)
   return(pred.bio)
 }
   
+nll.function.conc <- function(predict.bio,obs) 
+{
+  nobs <- 0
+  q.resid <- rep(NA,length(obs))
+  #first evaluate MLE for q
+  for (iobs in 1:length(obs))
+  {
+    #check if there was an observation this year. NB Change this!
+    if (obs[iobs]!=-99)
+    {
+      nobs <- nobs + 1
+      q.resid[iobs] <- log(obs[iobs]/
+                             mean(predict.bio[iobs:(iobs+1)],na.rm=TRUE))
+    }
+  }
+  # equation for q, note that na.rm=TRUE in sum() means the 
+  # function will ignore the missing values
+  q <- exp((1/nobs)*sum(q.resid,na.rm=TRUE))
+  
+  #now evaluate sigma
+  resid <- rep(NA,length(obs))
+  for (iobs in 1:length(obs))
+  {
+    #check if there was an observation this year. NB Change this!
+    if (obs[iobs]!=-99)
+    {
+      resid[iobs] <- (log(obs[iobs])-log(q)-
+                        log(mean(predict.bio[iobs:(iobs+1)],na.rm=TRUE)))^2
+    }
+  }
+  sigma <- sqrt(sum(resid,na.rm=TRUE)/nobs)
+
+  neg.log.like <- nobs*log(sigma) + nobs/2
+  
+  return(neg.log.like)
+}  
+  
 nll.function <- function(predict.bio,obs,q,sigma) 
 {
   log.like <- 0
@@ -87,19 +124,64 @@ objfun <- function(params=c(log.startbio=1,log.r=-0.2,log.k=10,log.q=-1,
   if (flag==0) return(nll)
 }
 
+#This version uses the concentrated likelihood where q and sigma are 
+#solved analytically
+objfun.conc <- function(params=c(log.startbio=1,log.r=-0.2,log.k=10),
+                        catch=rep(0,10),obs=rep(10,10),flag=1)
+{
+  #transform parameters
+  r <- exp(params[2])
+  k <- exp(params[3])
+  start.bio <- exp(params[1])*k
+  
+  
+  #predict the biomass time series
+  predict.bio <- predict.bio(start.bio,catch,r,k)
+  
+  #compute the (negative log) likelihood function
+  nll <- nll.function.conc(predict.bio,obs)
+  
+  #return the value for the negative log-likelihood
+  if (flag==1)
+  {
+    results <- NULL
+    results$nll <- nll  
+    results$predict.bio <- predict.bio
+    return(results)
+  }
+  if (flag==0) return(nll)
+}
+
 
 TheData <- read.csv("Yellowtail.csv")
 head(TheData)
-init.params <- c(log.startbio=log(100),
+init.params <- c(log.startbio=0.25,
                  log.r=log(0.5),
-                 log.k=log(200),
-                 log.q=log(0.9),
-                 log.sigma=-0.2)
-catch <- TheData$Yield..kt.
+                 log.k=log(200))
+#log.q=log(0.9),
+#log.sigma=-0.2)
 obs <- TheData$Survey..kg.tow.
-objfun(init.params,catch,obs,flag=1)
 
-a <- optim(par=init.params,fn=objfun,catch=catch,obs=obs,flag=0,method="SANN")
 
-objfun(a$par,catch,obs,flag=1)
+#objfun(init.params,catch,obs,flag=1)
+objfun.conc(init.params,catch,obs,flag=1)
+
+
+#a <- optim(par=init.params,fn=objfun,catch=catch,obs=obs,flag=0)
+a <- optim(par=init.params,fn=objfun.conc,catch=catch,obs=obs,flag=0)
+
+#output the function value, estimated parameters, and predicted biomass
+objfun.conc(a$par,catch,obs,flag=1)
 exp(a$par)
+
+
+#likelihood profile - for next meeting?
+#
+lprof.par <- 2
+lprof.par.vals <- log(seq(0.1,0.8,0.05))
+a <- NULL
+for (iprof in 1:length(lprof.par.vals))
+  a[[iprof]] <- optim(par=init.params,fn=objfun.lprof,catch=catch,obs=obs,
+                      flag=0,lprof.par,lprof.par.vals[iprof])
+#We need to turn objfun.conc into objfun.lprof!
+
