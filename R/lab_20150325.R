@@ -161,6 +161,7 @@ init.params <- c(log.startbio=0.25,
 #log.q=log(0.9),
 #log.sigma=-0.2)
 obs <- TheData$Survey..kg.tow.
+catch <- TheData$Yield..kt.
 
 
 #objfun(init.params,catch,obs,flag=1)
